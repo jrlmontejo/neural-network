@@ -9,11 +9,11 @@ OS: macOS 10.13.6
 import numpy as np
 
 INPUT_LAYER_SIZE = 354
-HIDDEN1_LAYER_SIZE = 5
-HIDDEN2_LAYER_SIZE = 4
+HIDDEN1_LAYER_SIZE = 9
+HIDDEN2_LAYER_SIZE = 8
 OUTPUT_LAYER_SIZE = 3
 
-def binarize_labels(labels):
+def binarize(labels):
   """Converts the labels into their binary representation
 
   The labels consist of 8 classes (1, 2, ..., 8) and can be mapped
@@ -33,22 +33,32 @@ def binarize_labels(labels):
   """
 
   y = []
+  
   for label in labels:
     l = int(label) - 1
     vec = list(np.binary_repr(l, width=3))
     vec = [int(b) for b in vec]
     y.append(vec)
+
   return y
 
-def partition_dataset(X, Y):
-  labels = binarize_labels(Y)
+def decimalize(labels):
+  """Converts the binary vectors back to their corresponding labels
 
-  # split 70 / 30
-  N = int(len(X) * 0.7)
-  training_data, validation_data = np.split(X, [ N ])
-  training_labels, validation_labels = np.split(labels, [ N ])
+  000 => Class 1
+  001 => Class 2
+  ...
+  111 => Class 8
 
-  return (training_data, training_labels), (validation_data, validation_labels)
+  Parameters:
+    labels: The array of binarized labels
+
+  Returns:
+    The array of labels
+  """
+
+  label_values = [int(''.join(i), 2) + 1 for i in labels.astype(str)]
+  return label_values
 
 def randomize(size):
   """Returns samples from a uniform distribution with range -0.1 to 0.1
@@ -238,7 +248,7 @@ def cost(errors):
 
   total_errors = [np.sum(e * e) * 0.5 for e in errors]
   return np.sum(total_errors) / len(total_errors)
-
+  
 def shuffle_indices(n):
   """Generates an array of numbers from 0 to n then shuffles it
 
@@ -261,12 +271,18 @@ def train(eta=0.1, epochs=30000):
   Parameters:
     eta: The learning rate
     epochs: The number of iterations
+
+  Returns:
+    The final weights and biases
   """
 
+  print('Fetching training set...')
   training_data = np.genfromtxt('training_set.csv', delimiter=',')
-  training_labels = binarize_labels(np.genfromtxt('training_labels.csv', delimiter=','))
+  training_labels = binarize(np.genfromtxt('training_labels.csv', delimiter=','))
+  
+  print('Fetching validation set...')
   validation_data = np.genfromtxt('validation_set.csv', delimiter=',')
-  validation_labels = binarize_labels(np.genfromtxt('validation_labels.csv', delimiter=','))
+  validation_labels = binarize(np.genfromtxt('validation_labels.csv', delimiter=','))
 
   training_size = len(training_labels)
   validation_size = len(validation_labels)
@@ -282,7 +298,7 @@ def train(eta=0.1, epochs=30000):
     p = shuffle_indices(training_size)
     q = shuffle_indices(validation_size)
 
-    # train
+    # training phase
     for n in range(0, training_size):
       i = p[n]
       x = training_data[i]
@@ -296,7 +312,7 @@ def train(eta=0.1, epochs=30000):
       biases = update_biases(biases, deltas, eta)
       training_errors.append(error)
 
-    # validate
+    # validation phase
     for n in range(0, validation_size):
       i = q[n]
       x = validation_data[i]
@@ -308,17 +324,47 @@ def train(eta=0.1, epochs=30000):
     training_error = cost(training_errors)
     validation_error = cost(validation_errors)
 
-    print('Iteration: {} Training Error: {} Validation Error: {}'.format(epoch, training_error, validation_error))
+    print('Iteration: {} Training Error: {} Validation Error: {}'.format(epoch + 1, training_error, validation_error))
     if validation_error < 0.001:
       break
 
-  print('Total epochs: {}'.format(epoch))
+  print('Total epochs: {}'.format(epoch + 1))
   print('Training error at termination: {}'.format(training_error))
   print('Validation error at termination: {}'.format(validation_error))
 
-# def test():
-#   DATA = np.genfromtxt('test_set.csv', delimiter=',')
+  return weights, biases
 
+def test(weights, biases):
+  """Tests the network on the test set
 
-train()
+  Parameters:
+    weights: The weights of the network per layer
+    biases: The biases of the network per layer
+
+  Returns:
+    The array of prediction results
+  """
+
+  test_data = np.genfromtxt('test_set.csv', delimiter=',')
+  results = []
+
+  for x in test_data:
+    y = feed_forward(x, weights, biases)
+    labels = np.around(y['out']).astype(int)
+    results.append(labels)
+
+  return decimalize(np.array(results))
+
+def start():
+  weights, biases = train(eta=0.1, epochs=200)
+  results = test(weights, biases)
+
+  predicted_file = 'predicted_ann.csv'
+  np.savetxt(predicted_file, results, delimiter=',', fmt='%i')
+
+  print(results)
+  print('Test results saved to {}'.format(predicted_file))
+
+start()
+
 
