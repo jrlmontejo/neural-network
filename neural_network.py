@@ -7,11 +7,17 @@ OS: macOS 10.13.6
 """
 
 import numpy as np
+import time
 
+# network architecture
 INPUT_LAYER_SIZE = 354
 HIDDEN1_LAYER_SIZE = 9
 HIDDEN2_LAYER_SIZE = 8
 OUTPUT_LAYER_SIZE = 3
+
+# number of epochs before early stopping if there
+# is no decrease in validation set error
+PATIENCE = 40
 
 def binarize(labels):
   """Converts the labels into their binary representation
@@ -33,7 +39,7 @@ def binarize(labels):
   """
 
   y = []
-  
+
   for label in labels:
     l = int(label) - 1
     vec = list(np.binary_repr(l, width=3))
@@ -147,6 +153,19 @@ def feed_forward(x, weights, biases):
 
   return { 'h1': y_h1, 'h2': y_h2, 'out': y_out }
 
+def error(y, d):
+  """Returns the error in the output layer
+
+  Parameters:
+    y: the response from the output layer
+    d: the desired or expected output
+
+  Returns:
+    The error in the output layer
+  """
+
+  return d - y
+
 def delta(*args):
   """Returns the local gradient for one layer
 
@@ -248,7 +267,7 @@ def cost(errors):
 
   total_errors = [np.sum(e * e) * 0.5 for e in errors]
   return np.sum(total_errors) / len(total_errors)
-  
+
 def shuffle_indices(n):
   """Generates an array of numbers from 0 to n then shuffles it
 
@@ -265,7 +284,7 @@ def shuffle_indices(n):
   np.random.shuffle(p)
   return p
 
-def train(eta=0.1, epochs=30000):
+def train(training_set_files, validation_set_files, eta=0.1, epochs=10000):
   """Trains the network
 
   Parameters:
@@ -276,13 +295,18 @@ def train(eta=0.1, epochs=30000):
     The final weights and biases
   """
 
-  print('Fetching training set...')
-  training_data = np.genfromtxt('training_set.csv', delimiter=',')
-  training_labels = binarize(np.genfromtxt('training_labels.csv', delimiter=','))
-  
-  print('Fetching validation set...')
-  validation_data = np.genfromtxt('validation_set.csv', delimiter=',')
-  validation_labels = binarize(np.genfromtxt('validation_labels.csv', delimiter=','))
+  training_set_file, training_labels_file = training_set_files
+  validation_set_file, validation_labels_file = validation_set_files
+
+  print('Fetching training data from {}...'.format(training_set_file))
+  training_data = np.genfromtxt(training_set_file, delimiter=',')
+  print('Fetching training labels from {}...'.format(training_labels_file))
+  training_labels = binarize(np.genfromtxt(training_labels_file, delimiter=','))
+
+  print('Fetching validation data from {}...'.format(validation_set_file))
+  validation_data = np.genfromtxt(validation_set_file, delimiter=',')
+  print('Fetching validation labels from {}...'.format(validation_labels_file))
+  validation_labels = binarize(np.genfromtxt(validation_labels_file, delimiter=','))
 
   training_size = len(training_labels)
   validation_size = len(validation_labels)
@@ -290,6 +314,20 @@ def train(eta=0.1, epochs=30000):
   # initialize weights & biases
   weights = init_weights()
   biases = init_biases()
+
+  # patience counter
+  j = 0
+
+  # storage for the best parameters so far
+  best_params = {
+    'training_error': 1.0,
+    'validation_error': 1.0,
+    'epoch': 0,
+    'weights': weights,
+    'biases': biases
+  }
+
+  start = time.time()
 
   for epoch in range(0, epochs):
     training_errors = []
@@ -306,11 +344,11 @@ def train(eta=0.1, epochs=30000):
       y = feed_forward(x, weights, biases)
 
       # back propagate
-      error = d - y['out']
-      deltas = compute_local_gradients(y, error, weights)
+      err = error(y['out'], d)
+      deltas = compute_local_gradients(y, err, weights)
       weights = update_weights(weights, deltas, y, x, eta)
       biases = update_biases(biases, deltas, eta)
-      training_errors.append(error)
+      training_errors.append(err)
 
     # validation phase
     for n in range(0, validation_size):
@@ -318,26 +356,48 @@ def train(eta=0.1, epochs=30000):
       x = validation_data[i]
       d = validation_labels[i]
       y = feed_forward(x, weights, biases)
-      error = d - y['out']
-      validation_errors.append(error)
+      err = error(y['out'], d)
+      validation_errors.append(err)
 
     training_error = cost(training_errors)
     validation_error = cost(validation_errors)
 
     print('Iteration: {} Training Error: {} Validation Error: {}'.format(epoch + 1, training_error, validation_error))
-    if validation_error < 0.001:
+
+    # save the model parameters if there is a decrease in validation error
+    if validation_error < best_params['validation_error']:
+      best_params['training_error'] = training_error
+      best_params['validation_error'] = validation_error
+      best_params['epoch'] = epoch
+      best_params['weights'] = weights
+      best_params['biases'] = biases
+      j = 0
+    else:
+      j = j + 1
+
+    # early stopping
+    if j > PATIENCE:
       break
 
-  print('Total epochs: {}'.format(epoch + 1))
+  end = time.time()
+
+  print('\nTraining time: {} seconds'.format(end - start))
+
+  print('\nTotal epochs: {}'.format(epoch + 1))
   print('Training error at termination: {}'.format(training_error))
   print('Validation error at termination: {}'.format(validation_error))
 
-  return weights, biases
+  print('\nChosen iteration: {}'.format(best_params['epoch'] + 1))
+  print('Training error at chosen iteration: {}'.format(best_params['training_error']))
+  print('Validation error at chosen iteration: {}'.format(best_params['validation_error']))
 
-def test(weights, biases):
+  return best_params['weights'], best_params['biases']
+
+def test(test_set_file, weights, biases):
   """Tests the network on the test set
 
   Parameters:
+    test_set_file: The test set file
     weights: The weights of the network per layer
     biases: The biases of the network per layer
 
@@ -345,7 +405,8 @@ def test(weights, biases):
     The array of prediction results
   """
 
-  test_data = np.genfromtxt('test_set.csv', delimiter=',')
+  print('Fetching test data from {}...'.format(test_set_file))
+  test_data = np.genfromtxt(test_set_file, delimiter=',')
   results = []
 
   for x in test_data:
@@ -356,13 +417,17 @@ def test(weights, biases):
   return decimalize(np.array(results))
 
 def start():
-  weights, biases = train(eta=0.1, epochs=200)
-  results = test(weights, biases)
+  training_set = ('training_set.csv', 'training_labels.csv')
+  validation_set = ('validation_set.csv', 'validation_labels.csv')
+
+  # train network
+  weights, biases = train(training_set, validation_set)
+
+  # test model on the test set
+  results = test('test_set.csv', weights, biases)
 
   predicted_file = 'predicted_ann.csv'
   np.savetxt(predicted_file, results, delimiter=',', fmt='%i')
-
-  print(results)
   print('Test results saved to {}'.format(predicted_file))
 
 start()
