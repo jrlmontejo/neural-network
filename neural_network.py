@@ -17,7 +17,7 @@ OUTPUT_LAYER_SIZE = 3
 
 # number of epochs before early stopping if there
 # is no decrease in validation set error
-PATIENCE = 40
+PATIENCE = 35
 
 def binarize(labels):
   """Converts the labels into their binary representation
@@ -284,10 +284,12 @@ def shuffle_indices(n):
   np.random.shuffle(p)
   return p
 
-def train(training_set_files, validation_set_files, eta=0.1, epochs=10000):
+def train(training_set, validation_set, eta=0.1, epochs=10000):
   """Trains the network
 
   Parameters:
+    training_set: The training set and labels
+    validation_set: The validation set and labels
     eta: The learning rate
     epochs: The number of iterations
 
@@ -295,18 +297,8 @@ def train(training_set_files, validation_set_files, eta=0.1, epochs=10000):
     The final weights and biases
   """
 
-  training_set_file, training_labels_file = training_set_files
-  validation_set_file, validation_labels_file = validation_set_files
-
-  print('Fetching training data from {}...'.format(training_set_file))
-  training_data = np.genfromtxt(training_set_file, delimiter=',')
-  print('Fetching training labels from {}...'.format(training_labels_file))
-  training_labels = binarize(np.genfromtxt(training_labels_file, delimiter=','))
-
-  print('Fetching validation data from {}...'.format(validation_set_file))
-  validation_data = np.genfromtxt(validation_set_file, delimiter=',')
-  print('Fetching validation labels from {}...'.format(validation_labels_file))
-  validation_labels = binarize(np.genfromtxt(validation_labels_file, delimiter=','))
+  training_data, training_labels = training_set
+  validation_data, validation_labels = validation_set
 
   training_size = len(training_labels)
   validation_size = len(validation_labels)
@@ -393,11 +385,11 @@ def train(training_set_files, validation_set_files, eta=0.1, epochs=10000):
 
   return best_params['weights'], best_params['biases']
 
-def test(test_set_file, weights, biases):
+def test(test_data, weights, biases):
   """Tests the network on the test set
 
   Parameters:
-    test_set_file: The test set file
+    test_data: The test data set
     weights: The weights of the network per layer
     biases: The biases of the network per layer
 
@@ -405,8 +397,6 @@ def test(test_set_file, weights, biases):
     The array of prediction results
   """
 
-  print('Fetching test data from {}...'.format(test_set_file))
-  test_data = np.genfromtxt(test_set_file, delimiter=',')
   results = []
 
   for x in test_data:
@@ -417,16 +407,39 @@ def test(test_set_file, weights, biases):
   return decimalize(np.array(results))
 
 def start():
-  training_set = ('training_set.csv', 'training_labels.csv')
-  validation_set = ('validation_set.csv', 'validation_labels.csv')
+  training_set_file = 'training_set.csv'
+  training_labels_file = 'training_labels.csv'
+
+  validation_set_file = 'validation_set.csv'
+  validation_labels_file = 'validation_labels.csv'
+
+  print('Fetching training data from {}...'.format(training_set_file))
+  training_data = np.genfromtxt(training_set_file, delimiter=',')
+
+  print('Fetching training labels from {}...'.format(training_labels_file))
+  training_labels = binarize(np.genfromtxt(training_labels_file, delimiter=','))
+
+  print('Fetching validation data from {}...'.format(validation_set_file))
+  validation_data = np.genfromtxt(validation_set_file, delimiter=',')
+
+  print('Fetching validation labels from {}...'.format(validation_labels_file))
+  validation_labels = binarize(np.genfromtxt(validation_labels_file, delimiter=','))
 
   # train network
-  weights, biases = train(training_set, validation_set)
+  weights, biases = train((training_data, training_labels), (validation_data, validation_labels))
+
+  test_set_file = 'test_set.csv'
+
+  print('Fetching test data from {}...'.format(test_set_file))
+  test_data = np.genfromtxt(test_set_file, delimiter=',')
 
   # test model on the test set
-  results = test('test_set.csv', weights, biases)
+  results = test(test_data, weights, biases)
 
-  predicted_file = 'predicted_ann.csv'
+  # save predictions to file
+  predicted_file = 'predicted_ann2.csv'
+
+  print('Saving predictions to {}...'.format(predicted_file))
   np.savetxt(predicted_file, results, delimiter=',', fmt='%i')
   print('Test results saved to {}'.format(predicted_file))
 
