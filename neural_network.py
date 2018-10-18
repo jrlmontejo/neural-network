@@ -437,7 +437,7 @@ def start():
   results = test(test_data, weights, biases)
 
   # save predictions to file
-  predicted_file = 'predicted_ann2.csv'
+  predicted_file = 'predicted_ann4.csv'
 
   print('Saving predictions to {}...'.format(predicted_file))
   np.savetxt(predicted_file, results, delimiter=',', fmt='%i')
